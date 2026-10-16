@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Ruta de entrega</title>
+  <link rel="stylesheet" href="ol.css">
+  <style>
+    html, body { height: 100%; margin: 0; background: #181B22; font-family: Roboto, sans-serif; }
+    #map { width: 100%; height: 100%; background: #181B22; }
+
+    .leyenda {
+      position: fixed; top: 10px; right: 10px; z-index: 10;
+      background: rgba(24,27,34,.9); border: 1px solid #2E353E; border-radius: 10px;
+      padding: 8px 10px; font-size: 11px; color: #8892A0;
+    }
+    .leyenda div { display: flex; align-items: center; margin: 2px 0; }
+    .leyenda i { width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; }
+
+    #detalle { position: fixed; left: 0; right: 0; bottom: 0; z-index: 20; display: none; padding: 12px; }
+    #detalle.visible { display: block; }
+    .card {
+      background: #1A1E24; border: 1px solid #2E353E; border-radius: 16px; padding: 16px;
+      color: #E8EDF2; box-shadow: 0 8px 24px rgba(0,0,0,.45);
+    }
+    .fila-top { display: flex; align-items: center; justify-content: space-between; }
+    .badge { color: #049FA5; font-size: 12px; font-weight: 700; letter-spacing: .6px; }
+    .cerrar { background: none; border: none; color: #8892A0; font-size: 24px; line-height: 1; padding: 0 4px; }
+    .cli { font-size: 18px; font-weight: 700; margin: 6px 0 10px; }
+    .fila { font-size: 13px; color: #8892A0; margin: 4px 0; }
+    .fila b { color: #E8EDF2; font-weight: 500; }
+    .acciones, .estados { display: flex; gap: 8px; margin-top: 12px; }
+    .btn {
+      flex: 1; display: block; text-align: center; text-decoration: none;
+      padding: 12px 8px; border-radius: 10px; font-size: 14px; font-weight: 600;
+      border: 1px solid #2E353E; background: rgba(255,255,255,.06); color: #E8EDF2;
+    }
+    .estados .btn { font-size: 12.5px; padding: 11px 4px; }
+    .estado.activo { background: #049FA5; border-color: #049FA5; color: #FFFFFF; }
+    .estado[data-estado="ENTREGADO"] { color: #2DD4A0; }
+    .estado[data-estado="NO_ENTREGADO"] { color: #EF5A6F; }
+    .estado.activo[data-estado] { color: #FFFFFF; }
+  </style>
+</head>
+<body>
+  <div id="map"></div>
+
+  <div class="leyenda">
+    <div><i style="background:#049FA5"></i>Pendiente</div>
+    <div><i style="background:#2DD4A0"></i>Entregado</div>
+    <div><i style="background:#EF5A6F"></i>No entregado</div>
+  </div>
+
+  <div id="detalle">
+    <div class="card">
+      <div class="fila-top">
+        <span id="d-pedido" class="badge"></span>
+        <button id="d-cerrar" class="cerrar">&times;</button>
+      </div>
+      <div id="d-cliente" class="cli"></div>
+      <div class="fila"><b>Dirección:</b> <span id="d-direccion"></span></div>
+      <div class="fila"><b>Referencia:</b> <span id="d-referencia"></span></div>
+      <div class="fila"><b>Teléfono:</b> <span id="d-telefono"></span></div>
+      <div class="acciones">
+        <a id="d-llamar" class="btn" href="#">Llamar</a>
+        <a id="d-whatsapp" class="btn" href="#">WhatsApp</a>
+      </div>
+      <div class="estados">
+        <button class="btn estado" data-estado="ENTREGADO">Entregado</button>
+        <button class="btn estado" data-estado="NO_ENTREGADO">No entregado</button>
+        <button class="btn estado" data-estado="PENDIENTE">Pendiente</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="ol.js"></script>
+  <script>
+    var COLORES = { PENDIENTE: '#049FA5', ENTREGADO: '#2DD4A0', NO_ENTREGADO: '#EF5A6F' };
+
+    var vectorSource = new ol.source.Vector();
+
+    var capaPuntos = new ol.layer.Vector({
+      source: vectorSource,
+      style: function (feature) {
+        var color = COLORES[feature.get('estatus')] || COLORES.PENDIENTE;
+        return new ol.style.Style({
+          image: new ol.style.Circle({
+            radius: 9,
+            fill: new ol.style.Fill({ color: color }),
+            stroke: new ol.style.Stroke({ color: '#FFFFFF', width: 2.5 })
+          })
+        });
+      }
+    });
+
+    var mapa = new ol.Map({
+      target: 'map',
+      layers: [
+        new ol.layer.Tile({ source: new ol.source.OSM({ crossOrigin: null }) }),
+        capaPuntos
+      ],
+      view: new ol.View({
+        center: ol.proj.fromLonLat([-66.9036, 10.4806]),
+        zoom: 15,
+        // Rango de zoom acotado a niveles cercanos: menos niveles => menos teselas cacheadas.
+        minZoom: 14,
+        maxZoom: 17
+      })
+    });
+
+    function telefonoWhatsapp(tel) {
+      var digitos = (tel || '').replace(/\D/g, '');
+      if (digitos.charAt(0) === '0') { digitos = digitos.substring(1); }
+      if (digitos.indexOf('58') !== 0) { digitos = '58' + digitos; }
+      return digitos;
+    }
+
+    function cargarRuta() {
+      if (typeof AndroidRuta === 'undefined') { return; }
+      var json;
+      try { json = JSON.parse(AndroidRuta.obtenerJsonRuta()); } catch (e) { return; }
+      var pedidos = json.pedidos || {};
+      var claves = Object.keys(pedidos);
+      var features = [];
+
+      claves.forEach(function (clave) {
+        var p = pedidos[clave];
+        if (!p || !p.coords) { return; }
+        var partes = String(p.coords).split(',');
+        var lat = parseFloat(partes[0]);
+        var lon = parseFloat(partes[1]);
+        if (isNaN(lat) || isNaN(lon)) { return; }
+        var f = new ol.Feature({ geometry: new ol.geom.Point(ol.proj.fromLonLat([lon, lat])) });
+        f.set('pedido', p);
+        f.set('numero', p.numero_pedido || clave);
+        f.set('estatus', p.estatus_entrega || 'PENDIENTE');
+        features.push(f);
+      });
+
+      vectorSource.addFeatures(features);
+      if (features.length > 0) {
+        mapa.getView().fit(vectorSource.getExtent(), { padding: [90, 70, 90, 70], maxZoom: 17 });
+      }
+    }
+
+    // ---------- Panel de detalle ----------
+    var detalle = document.getElementById('detalle');
+    var featureActual = null;
+
+    function marcarEstadoActivo(estatus) {
+      var botones = document.querySelectorAll('.estado');
+      for (var i = 0; i < botones.length; i++) {
+        botones[i].classList.toggle('activo', botones[i].getAttribute('data-estado') === estatus);
+      }
+    }
+
+    function mostrarDetalle(feature) {
+      featureActual = feature;
+      var p = feature.get('pedido');
+      document.getElementById('d-pedido').textContent = 'PEDIDO ' + (p.numero_pedido || '');
+      document.getElementById('d-cliente').textContent = p.nombre_cliente || '(sin nombre)';
+      document.getElementById('d-direccion').textContent = p.direccion || '—';
+      document.getElementById('d-referencia').textContent = p.puntoreferencia || '—';
+      document.getElementById('d-telefono').textContent = p.telefono_cliente || '—';
+
+      var tel = telefonoWhatsapp(p.telefono_cliente);
+      document.getElementById('d-llamar').setAttribute('href', 'tel:+' + tel);
+      document.getElementById('d-whatsapp').setAttribute('href',
+        'whatsapp://send?phone=' + tel + '&text=' + encodeURIComponent('Pedido ' + (p.numero_pedido || '')));
+
+      marcarEstadoActivo(feature.get('estatus'));
+      detalle.classList.add('visible');
+    }
+
+    function cerrarDetalle() {
+      detalle.classList.remove('visible');
+      featureActual = null;
+    }
+
+    document.getElementById('d-cerrar').addEventListener('click', cerrarDetalle);
+
+    var botonesEstado = document.querySelectorAll('.estado');
+    for (var i = 0; i < botonesEstado.length; i++) {
+      botonesEstado[i].addEventListener('click', function () {
+        if (!featureActual) { return; }
+        var nuevo = this.getAttribute('data-estado');
+        if (typeof AndroidRuta !== 'undefined') {
+          AndroidRuta.actualizarEstatusPedido(featureActual.get('numero'), nuevo);
+        }
+        featureActual.set('estatus', nuevo);
+        marcarEstadoActivo(nuevo);
+        capaPuntos.changed();
+      });
+    }
+
+    mapa.on('singleclick', function (evt) {
+      var feature = mapa.forEachFeatureAtPixel(evt.pixel, function (f) { return f; }, { hitTolerance: 14 });
+      if (feature) {
+        mostrarDetalle(feature);
+      } else {
+        cerrarDetalle();
+      }
+    });
+
+    cargarRuta();
+  </script>
+</body>
+</html>

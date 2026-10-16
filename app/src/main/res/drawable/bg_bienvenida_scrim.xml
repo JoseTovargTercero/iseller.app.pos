@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Oscurece arriba y abajo para dar contraste al texto y a los botones -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <gradient
+        android:angle="270"
+        android:centerColor="#00181B22"
+        android:centerY="0.38"
+        android:endColor="#F2181B22"
+        android:startColor="#CC181B22"
+        android:type="linear" />
+</shape>

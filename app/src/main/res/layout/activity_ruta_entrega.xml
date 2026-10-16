@@ -1,0 +1,132 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/pos_bg"
+    android:fillViewport="true"
+    android:scrollbars="none"
+    tools:context=".RutaEntrega">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:paddingStart="32dp"
+        android:paddingTop="48dp"
+        android:paddingEnd="32dp"
+        android:paddingBottom="32dp">
+
+        <ImageView
+            android:layout_width="72dp"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center_horizontal"
+            android:adjustViewBounds="true"
+            android:contentDescription="@string/app_name"
+            android:scaleType="fitCenter"
+            app:srcCompat="@mipmap/logo1" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center_horizontal"
+            android:layout_marginTop="18dp"
+            android:letterSpacing="0.22"
+            android:text="RUTAS DE ENTREGA"
+            android:textColor="@color/pos_primary"
+            android:textSize="12sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center_horizontal"
+            android:layout_marginTop="8dp"
+            android:text="Consulta tu ruta"
+            android:textColor="@color/pos_text"
+            android:textSize="26sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:gravity="center"
+            android:text="Carga el código que te entregó el administrador."
+            android:textColor="@color/pos_muted"
+            android:textSize="14sp" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="22dp"
+            android:background="@drawable/bg_dialog_card"
+            android:lineSpacingExtra="2dp"
+            android:padding="16dp"
+            android:text="Accede a las rutas generadas desde el POS con el código del administrador. Al abrir el mapa por primera vez, las zonas que visualices se guardarán en el dispositivo para consultarlas sin conexión."
+            android:textColor="@color/pos_muted"
+            android:textSize="13sp" />
+
+        <EditText
+            android:id="@+id/etCodigoRuta"
+            android:layout_width="match_parent"
+            android:layout_height="56dp"
+            android:layout_marginTop="18dp"
+            android:background="@drawable/bg_pos_input"
+            android:digits="0123456789-abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+            android:fontFamily="monospace"
+            android:hint="0000-AAAA"
+            android:inputType="text"
+            android:letterSpacing="0.08"
+            android:maxLength="9"
+            android:paddingStart="16dp"
+            android:paddingEnd="16dp"
+            android:textColor="@color/pos_text"
+            android:textColorHint="@color/pos_muted"
+            android:textSize="16sp"
+            tools:ignore="Autofill" />
+
+        <androidx.appcompat.widget.AppCompatButton
+            android:id="@+id/btnSolicitarRuta"
+            android:layout_width="match_parent"
+            android:layout_height="56dp"
+            android:layout_marginTop="14dp"
+            android:background="@drawable/btn_pos_primary"
+            android:elevation="8dp"
+            android:gravity="center"
+            android:outlineAmbientShadowColor="#40049FA5"
+            android:outlineSpotShadowColor="#80049FA5"
+            android:text="Cargar ruta"
+            android:textAllCaps="false"
+            android:textColor="#FFFFFF"
+            android:textSize="16sp"
+            android:textStyle="bold"
+            tools:targetApi="p" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="30dp"
+            android:text="Rutas guardadas"
+            android:textColor="@color/pos_text"
+            android:textSize="15sp"
+            android:textStyle="bold" />
+
+        <LinearLayout
+            android:id="@+id/contenedorRutas"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical" />
+
+        <TextView
+            android:id="@+id/emptyRutas"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp"
+            android:text="Aún no hay rutas guardadas en este dispositivo."
+            android:textColor="@color/pos_muted"
+            android:textSize="13sp" />
+
+    </LinearLayout>
+</ScrollView>

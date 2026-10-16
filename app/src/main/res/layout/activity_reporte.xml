@@ -1,0 +1,119 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.constraintlayout.widget.ConstraintLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@mipmap/back3"
+    tools:context=".Reporte_flujo">
+
+    <LinearLayout
+        android:id="@+id/linearLayout2"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:background="@drawable/barra_superior"
+        android:elevation="8dp"
+        android:orientation="horizontal"
+        android:padding="11dp"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent">
+
+
+
+        <Button
+            android:id="@+id/vaciar"
+            android:layout_gravity="center"
+            android:textAlignment="center"
+            android:layout_width="40dp"
+            android:layout_height="35dp"
+            android:onClick="onClick"
+            android:background="@color/zxing_transparent"
+            android:gravity="center"
+            android:drawableLeft="@drawable/baseline_delete_sweep_24" />
+
+
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginLeft="15dp"
+            android:padding="5dp"
+            android:text="@string/version"
+            android:textColor="@color/white"
+            android:textSize="17dp"
+            android:textStyle="bold" />
+
+
+
+
+        <Button
+            android:visibility="gone"
+            android:id="@+id/btnScan"
+            android:layout_gravity="center"
+            android:textAlignment="center"
+            android:layout_width="40dp"
+            android:layout_height="35dp"
+            android:onClick="onClick"
+            android:background="@color/zxing_transparent"
+            android:gravity="center"
+            android:drawableLeft="@drawable/baseline_qr_code_24" />
+
+
+    </LinearLayout>
+
+    <!-- Los siguientes EditTexts están ocultos por ahora -->
+
+    <ListView
+        android:id="@+id/listadoReportes"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:layout_margin="10dp"
+        android:layout_marginTop="44dp"
+        android:textColor="@android:color/darker_gray"
+        android:divider="@color/zxing_transparent"
+        android:dividerHeight="0dp"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@+id/linearLayout2"
+        app:layout_constraintBottom_toTopOf="@+id/bottomLayout" />
+
+    <LinearLayout
+        android:id="@+id/bottomLayout"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:paddingTop="0dp"
+        android:paddingBottom="15dp"
+        android:paddingEnd="15dp"
+        android:paddingStart="15dp"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent">
+
+        <EditText
+            android:id="@+id/electores"
+            android:layout_width="0dp"
+            android:layout_height="45dp"
+            android:layout_weight="1"
+            android:background="@drawable/edt_style"
+            android:hint="Cedula del elector"
+            android:inputType="phone"
+            android:padding="10dp"
+            android:textColor="@android:color/background_dark" />
+
+        <ImageButton
+            android:id="@+id/acceso"
+            android:layout_width="45dp"
+            android:layout_height="45dp"
+            android:layout_marginStart="8dp"
+            android:layout_marginLeft="8dp"
+            android:background="@drawable/btn_style"
+            android:contentDescription="Enviar"
+            android:padding="10dp"
+            android:src="@drawable/baseline_send_24" />
+    </LinearLayout>
+
+</androidx.constraintlayout.widget.ConstraintLayout>

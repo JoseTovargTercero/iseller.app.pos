@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Input estilo iSeller: superficie #1A1E24, borde #2E353E, foco en el primario -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_focused="true">
+        <shape android:shape="rectangle">
+            <solid android:color="@color/pos_surface" />
+            <stroke android:width="1dp" android:color="@color/pos_primary" />
+            <corners android:radius="8dp" />
+        </shape>
+    </item>
+    <item>
+        <shape android:shape="rectangle">
+            <solid android:color="@color/pos_surface" />
+            <stroke android:width="1dp" android:color="@color/pos_border" />
+            <corners android:radius="8dp" />
+        </shape>
+    </item>
+</selector>

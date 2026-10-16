@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- API 31+: fondo del splash personalizado (#181B22) -->
+<resources>
+    <style name="Theme.AppCompat.Light.NoActionBar" parent="Base.Theme.AppCompat.Light.NoActionBar">
+        <item name="android:windowBackground">@color/pos_bg</item>
+        <item name="android:windowSplashScreenBackground">@color/pos_bg</item>
+    </style>
+</resources>

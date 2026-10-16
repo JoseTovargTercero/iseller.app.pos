@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Gradiente de marca iSeller: linear-gradient(135deg,#049FA5,#038086) -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <gradient
+        android:angle="315"
+        android:endColor="@color/pos_primary_dark"
+        android:startColor="@color/pos_primary"
+        android:type="linear" />
+    <corners android:radius="28dp" />
+</shape>

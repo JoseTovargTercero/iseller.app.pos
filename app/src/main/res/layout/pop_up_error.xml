@@ -1,0 +1,121 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:background="@drawable/pop"
+    android:orientation="vertical"
+
+    android:paddingBottom="30dp"
+    android:layout_gravity="center">
+
+    <LinearLayout
+        android:visibility="gone"
+        android:layout_width="match_parent"
+        android:layout_gravity="end"
+        android:layout_marginTop="10dp"
+        android:layout_marginRight="10dp"
+
+        android:gravity="end"
+        android:layout_height="match_parent">
+
+
+        <TextView
+            android:id="@+id/cerrar"
+            android:layout_width="30dp"
+            android:layout_height="30dp"
+            android:text="X"
+            android:textStyle="bold"
+            android:gravity="center"
+            android:background="@drawable/oval"
+            android:textColor="@color/white"></TextView>
+    </LinearLayout>
+
+
+
+
+
+
+    <LinearLayout
+        android:paddingLeft="50dp"
+        android:paddingTop="20dp"
+        android:paddingRight="50dp"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical">
+
+        <ImageView
+            android:layout_width="126dp"
+            android:layout_height="104dp"
+            android:layout_gravity="center"
+            android:layout_marginTop="15dp"
+            android:src="@drawable/conexion_error" />
+
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center_horizontal"
+            android:layout_marginTop="20dp"
+            android:gravity="center"
+            android:text="Ooops!!"
+            android:textColor="@color/white"
+            android:textSize="17dp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:layout_width="220dp"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center_horizontal"
+            android:layout_marginTop="5dp"
+            android:text="No se pudo establecer conexion, intente enviar cuando tenga conexion"
+            android:textColor="@color/gray"
+            android:gravity="center"
+            android:textSize="11dp" />
+
+    </LinearLayout>
+
+    <LinearLayout
+
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="25dp"
+        android:gravity="center_horizontal"
+        android:orientation="horizontal"
+        android:paddingLeft="50dp"
+        android:paddingTop="10dp"
+        android:paddingRight="50dp"
+        android:paddingBottom="10dp">
+
+
+        <Button
+            android:visibility="gone"
+
+            android:id="@+id/reintentar"
+            android:layout_width="226dp"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:layout_marginTop="0dp"
+            android:background="@drawable/btn_style"
+            android:onClick="validar3"
+            android:padding="10dp"
+            android:text="Reintentar"
+            android:textColor="#FFFFFFFF" />
+
+        <Button
+            android:id="@+id/cancelar"
+            android:layout_width="201dp"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:layout_marginLeft="15dp"
+            android:layout_marginTop="0dp"
+            android:background="@drawable/btn_last"
+            android:onClick="validar3"
+            android:padding="10dp"
+            android:text="Aceptar"
+            android:textColor="#FFFFFFFF" />
+
+
+    </LinearLayout>
+
+</LinearLayout>
