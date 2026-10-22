@@ -36,14 +36,43 @@
       border: 1px solid #2E353E; background: rgba(255,255,255,.06); color: #E8EDF2;
     }
     .estados .btn { font-size: 12.5px; padding: 11px 4px; }
+    .btn:disabled { cursor: default; }
     .estado.activo { background: #049FA5; border-color: #049FA5; color: #FFFFFF; }
+    .estado.pendiente-envio { background: rgba(255,193,7,.16); border-color: rgba(255,193,7,.55); color: #FFC107; }
     .estado[data-estado="ENTREGADO"] { color: #2DD4A0; }
     .estado[data-estado="NO_ENTREGADO"] { color: #EF5A6F; }
     .estado.activo[data-estado] { color: #FFFFFF; }
+    .estado.pendiente-envio[data-estado] { color: #FFC107; }
+
+    /* Botones flotantes de acción sobre el mapa (tokens iSeller) */
+    #accionesMapa { position: fixed; top: 10px; left: 10px; z-index: 15; display: flex; gap: 8px; }
+    .btn-mapa {
+      width: 48px; height: 48px; display: grid; place-items: center;
+      background: rgba(24,27,34,.92); border: 1px solid #2E353E; border-radius: 12px;
+      color: #E8EDF2; box-shadow: 0 8px 24px rgba(0,0,0,.30); cursor: pointer;
+      transition: all .2s ease;
+    }
+    .btn-mapa:active { transform: scale(.96); }
+    .btn-mapa.activo { background: #049FA5; border-color: #049FA5; color: #FFFFFF; }
+    .btn-mapa svg { width: 24px; height: 24px; fill: currentColor; }
+    /* el zoom de OpenLayers baja para no chocar con los botones */
+    .ol-zoom { top: 70px; }
   </style>
 </head>
 <body>
   <div id="map"></div>
+
+  <div id="accionesMapa">
+    <button id="btnCentrar" class="btn-mapa" title="Centrar en mi ubicación">
+      <svg viewBox="0 0 24 24"><path d="M12 8c-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4-1.79-4-4-4zm8.94 3A8.994 8.994 0 0 0 13 3.06V1h-2v2.06A8.994 8.994 0 0 0 3.06 11H1v2h2.06A8.994 8.994 0 0 0 11 20.94V23h2v-2.06A8.994 8.994 0 0 0 20.94 13H23v-2h-2.06zM12 19c-3.87 0-7-3.13-7-7s3.13-7 7-7 7 3.13 7 7-3.13 7-7 7z"/></svg>
+    </button>
+    <button id="btnRecorrido" class="btn-mapa" title="Generar recorrido">
+      <svg viewBox="0 0 24 24"><path d="M23 8c0 1.1-.9 2-2 2a1.7 1.7 0 0 1-.51-.07l-3.56 3.55c.05.16.07.34.07.52 0 1.1-.9 2-2 2s-2-.9-2-2c0-.18.02-.36.07-.52l-2.55-2.55c-.16.05-.34.07-.52.07s-.36-.02-.52-.07l-4.55 4.56c.05.16.07.33.07.51 0 1.1-.9 2-2 2s-2-.9-2-2 .9-2 2-2c.18 0 .35.02.51.07l4.56-4.55C8.02 9.36 8 9.18 8 9c0-1.1.9-2 2-2s2 .9 2 2c0 .18-.02.36-.07.52l2.55 2.55c.16-.05.34-.07.52-.07s.36.02.52.07l3.55-3.56A1.7 1.7 0 0 1 19 8c0-1.1.9-2 2-2s2 .9 2 2z"/></svg>
+    </button>
+    <button id="btnActualizar" class="btn-mapa" title="Actualizar ruta">
+      <svg viewBox="0 0 24 24"><path d="M17.65 6.35A7.96 7.96 0 0 0 12 4c-4.42 0-7.99 3.58-8 8s3.58 8 8 8c3.73 0 6.84-2.55 7.73-6h-2.08A5.99 5.99 0 0 1 12 18c-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg>
+    </button>
+  </div>
 
   <div class="leyenda">
     <div><i style="background:#049FA5"></i>Pendiente</div>
@@ -61,14 +90,13 @@
       <div class="fila"><b>Dirección:</b> <span id="d-direccion"></span></div>
       <div class="fila"><b>Referencia:</b> <span id="d-referencia"></span></div>
       <div class="fila"><b>Teléfono:</b> <span id="d-telefono"></span></div>
+      <div class="fila" id="d-sync" style="display:none"><b>Envío:</b> <span id="d-sync-texto"></span></div>
       <div class="acciones">
         <a id="d-llamar" class="btn" href="#">Llamar</a>
         <a id="d-whatsapp" class="btn" href="#">WhatsApp</a>
       </div>
       <div class="estados">
-        <button class="btn estado" data-estado="ENTREGADO">Entregado</button>
-        <button class="btn estado" data-estado="NO_ENTREGADO">No entregado</button>
-        <button class="btn estado" data-estado="PENDIENTE">Pendiente</button>
+        <button id="d-entregar" class="btn estado" data-estado="ENTREGADO">Marcar entregado</button>
       </div>
     </div>
   </div>
@@ -93,19 +121,272 @@
       }
     });
 
+    // ---- Recorrido sugerido (se dibuja por debajo de los puntos) ----
+    var recorridoSource = new ol.source.Vector();
+    var capaRecorrido = new ol.layer.Vector({
+      source: recorridoSource,
+      style: [
+        new ol.style.Style({
+          stroke: new ol.style.Stroke({ color: 'rgba(255,255,255,.9)', width: 9, lineJoin: 'round', lineCap: 'round' })
+        }),
+        new ol.style.Style({
+          stroke: new ol.style.Stroke({ color: '#049FA5', width: 5, lineJoin: 'round', lineCap: 'round' })
+        })
+      ]
+    });
+
+    // ---- Ubicación del usuario: punto azul + cono de rumbo (si hay brújula) ----
+    var ubicacionSource = new ol.source.Vector();
+    var ubicacionFeature = new ol.Feature();
+
+    var capaUbicacion = new ol.layer.Vector({
+      source: ubicacionSource,
+      style: new ol.style.Style({
+        image: new ol.style.Circle({
+          radius: 7,
+          fill: new ol.style.Fill({ color: '#5B9CF5' }),
+          stroke: new ol.style.Stroke({ color: '#FFFFFF', width: 3 })
+        })
+      })
+    });
+
+    var rumboSource = new ol.source.Vector();
+    var capaRumbo = new ol.layer.Vector({
+      source: rumboSource,
+      style: new ol.style.Style({
+        fill: new ol.style.Fill({ color: 'rgba(91,156,245,.35)' })
+      })
+    });
+
     var mapa = new ol.Map({
       target: 'map',
       layers: [
         new ol.layer.Tile({ source: new ol.source.OSM({ crossOrigin: null }) }),
-        capaPuntos
+        capaRecorrido,
+        capaPuntos,
+        capaRumbo,
+        capaUbicacion
       ],
       view: new ol.View({
-        center: ol.proj.fromLonLat([-66.9036, 10.4806]),
+        center: ol.proj.fromLonLat([-67.6236, 5.6631]), // Puerto Ayacucho
         zoom: 15,
         // Rango de zoom acotado a niveles cercanos: menos niveles => menos teselas cacheadas.
         minZoom: 14,
         maxZoom: 17
       })
+    });
+
+    var centradoEnRuta = false;
+    var posUsuario = null;
+    var mostrandoRecorrido = false;
+
+    // Cono de rumbo: vértice en la posición, 55 px de largo hacia el rumbo.
+    var rumboCentro = null;
+    var rumboGrados = null;
+
+    function redibujarRumbo() {
+      rumboSource.clear();
+      if (rumboCentro === null || rumboGrados === null) { return; }
+      var rad = rumboGrados * Math.PI / 180;         // 0 = norte, sentido horario
+      var dx = Math.sin(rad), dy = Math.cos(rad);    // en la proyección el norte es +y
+      var R = 55 * mapa.getView().getResolution();   // 55 px
+      var ap = 26 * Math.PI / 180;                   // media apertura
+      function vertice(a) {
+        var c = Math.cos(a), s = Math.sin(a);
+        var vx = dx * c - dy * s;
+        var vy = dx * s + dy * c;
+        return [rumboCentro[0] + vx * R, rumboCentro[1] + vy * R];
+      }
+      rumboSource.addFeature(new ol.Feature(
+        new ol.geom.Polygon([[rumboCentro, vertice(-ap), vertice(ap), rumboCentro]])));
+    }
+
+    mapa.getView().on('change:resolution', redibujarRumbo);
+
+    function dibujarRumbo(centro, rumbo) {
+      rumboCentro = centro;
+      rumboGrados = (rumbo === null || isNaN(rumbo)) ? null : rumbo;
+      redibujarRumbo();
+    }
+
+    // Llamado desde MapaActivity cuando cambian el GPS o la brújula.
+    window.ubicacionUsuario = function (lat, lon, rumbo) {
+      lat = Number(lat);
+      lon = Number(lon);
+      if (isNaN(lat) || isNaN(lon)) { return; }
+      var r = Number(rumbo);
+      var heading = (rumbo === null || rumbo === undefined || isNaN(r)) ? null : r;
+
+      var centro = ol.proj.fromLonLat([lon, lat]);
+      ubicacionFeature.setGeometry(new ol.geom.Point(centro));
+      ubicacionSource.clear();
+      ubicacionSource.addFeature(ubicacionFeature);
+
+      dibujarRumbo(centro, heading);
+
+      var cambioPosicion = (posUsuario === null || posUsuario[0] !== lon || posUsuario[1] !== lat);
+      posUsuario = [lon, lat];
+
+      if (!centradoEnRuta) {
+        mapa.getView().setCenter(centro);
+      }
+      if (cambioPosicion && mostrandoRecorrido) {
+        dibujarRecorrido();
+      }
+    };
+
+    // ---- Recorrido: ordena por cercanía desde el usuario y dibuja la línea ----
+    function ordenarPorCercania(inicio, puntos) {
+      if (!inicio) { return puntos.slice(); }
+      var restantes = puntos.slice();
+      var orden = [];
+      var actual = inicio;
+      while (restantes.length > 0) {
+        var mejor = 0;
+        var mejorDist = Infinity;
+        for (var i = 0; i < restantes.length; i++) {
+          var dx = actual[0] - restantes[i][0];
+          var dy = actual[1] - restantes[i][1];
+          var d = dx * dx + dy * dy;
+          if (d < mejorDist) { mejorDist = d; mejor = i; }
+        }
+        actual = restantes[mejor];
+        orden.push(actual);
+        restantes.splice(mejor, 1);
+      }
+      return orden;
+    }
+
+    var OSRM_URL = 'https://router.project-osrm.org/route/v1/driving/';
+
+    /* Aviso al usuario: los Toast nativos los muestra el lado Android. */
+    function aviso(mensaje) {
+      if (typeof AndroidRuta !== 'undefined' && AndroidRuta.mostrarToast) {
+        AndroidRuta.mostrarToast(mensaje);
+      }
+    }
+
+    /* Caché de recorridos ya calculados, en localStorage (el WebView tiene DomStorage).
+       La clave depende solo del conjunto de pedidos de la ruta, no de dónde esté el
+       repartidor: así el recorrido no se recalcula (ni parpadea) con cada movimiento. */
+    function claveRecorrido(numeros) {
+      var texto = numeros.slice().sort().join(',');
+      var h = 5381;
+      for (var i = 0; i < texto.length; i++) {
+        h = ((h << 5) + h + texto.charCodeAt(i)) | 0;
+      }
+      return 'osrm_' + (h >>> 0).toString(36) + '_' + texto.length;
+    }
+
+    function leerRecorridoCache(clave) {
+      try {
+        var guardado = localStorage.getItem(clave);
+        return guardado ? JSON.parse(guardado) : null;
+      } catch (e) {
+        return null;
+      }
+    }
+
+    function guardarRecorridoCache(clave, coords) {
+      try {
+        localStorage.setItem(clave, JSON.stringify(coords));
+      } catch (e) {
+        // sin espacio: se sigue funcionando sin caché
+      }
+    }
+
+    var recorridoDibujado = null;    // clave del recorrido que está en el mapa
+    var calculandoRecorrido = false;
+
+    function pintarRecorrido(coords) {
+      recorridoSource.clear();
+      if (coords && coords.length > 1) {
+        recorridoSource.addFeature(new ol.Feature(new ol.geom.LineString(coords)));
+      }
+    }
+
+    function dibujarRecorrido() {
+      if (!mostrandoRecorrido) {
+        pintarRecorrido(null);
+        recorridoDibujado = null;
+        return;
+      }
+
+      var numeros = [];
+      vectorSource.getFeatures().forEach(function (f) { numeros.push(String(f.get('numero'))); });
+      if (numeros.length < 2) {
+        pintarRecorrido(null);
+        recorridoDibujado = null;
+        return;
+      }
+
+      var clave = claveRecorrido(numeros);
+      if (clave === recorridoDibujado) { return; }   // ya está en pantalla
+
+      var cache = leerRecorridoCache(clave);
+      if (cache) {
+        recorridoDibujado = clave;
+        pintarRecorrido(cache);
+        return;
+      }
+      if (calculandoRecorrido) { return; }
+
+      var inicio = (posUsuario !== null) ? ol.proj.fromLonLat(posUsuario) : null;
+      var puntos = [];
+      vectorSource.getFeatures().forEach(function (f) {
+        var g = f.getGeometry();
+        if (g) { puntos.push(g.getCoordinates()); }
+      });
+      var waypoints = (inicio ? [inicio] : []).concat(ordenarPorCercania(inicio, puntos));
+      if (waypoints.length < 2) { return; }
+
+      var texto = waypoints.map(function (c) {
+        var ll = ol.proj.toLonLat(c);
+        return ll[0].toFixed(6) + ',' + ll[1].toFixed(6);
+      }).join(';');
+
+      // Solo se dibuja el recorrido real por calles: nada de líneas rectas de relleno.
+      calculandoRecorrido = true;
+      fetch(OSRM_URL + texto + '?overview=full&geometries=geojson')
+        .then(function (r) {
+          if (!r.ok) { throw new Error('HTTP ' + r.status); }
+          return r.json();
+        })
+        .then(function (data) {
+          calculandoRecorrido = false;
+          if (!mostrandoRecorrido) { return; }
+          if (!data || !data.routes || !data.routes.length) {
+            aviso('No se pudo calcular el recorrido por calles.');
+            return;
+          }
+          var coords = data.routes[0].geometry.coordinates.map(function (c) {
+            return ol.proj.fromLonLat(c);   // GeoJSON usa [lon,lat]
+          });
+          guardarRecorridoCache(clave, coords);
+          recorridoDibujado = clave;
+          pintarRecorrido(coords);
+        })
+        .catch(function () {
+          calculandoRecorrido = false;
+          aviso('Sin conexión: el recorrido por calles no está disponible.');
+        });
+    }
+
+    document.getElementById('btnCentrar').addEventListener('click', function () {
+      if (posUsuario === null) { return; }
+      mapa.getView().animate({ center: ol.proj.fromLonLat(posUsuario), zoom: 16, duration: 500 });
+    });
+
+    document.getElementById('btnRecorrido').addEventListener('click', function () {
+      mostrandoRecorrido = !mostrandoRecorrido;
+      this.classList.toggle('activo', mostrandoRecorrido);
+      recorridoDibujado = null;   // al encenderlo se recalcula desde la posición actual
+      dibujarRecorrido();
+    });
+
+    document.getElementById('btnActualizar').addEventListener('click', function () {
+      // Sube la cola de entregas y vuelve a bajar la ruta (por si el POS agregó pedidos)
+      if (typeof AndroidRuta !== 'undefined') { AndroidRuta.actualizarRuta(); }
     });
 
     function telefonoWhatsapp(tel) {
@@ -119,6 +400,12 @@
       if (typeof AndroidRuta === 'undefined') { return; }
       var json;
       try { json = JSON.parse(AndroidRuta.obtenerJsonRuta()); } catch (e) { return; }
+
+      // Se vacía antes de recargar: la ruta se puede actualizar sin duplicar pines ni líneas.
+      vectorSource.clear();
+      pintarRecorrido(null);
+      recorridoDibujado = null;
+
       var pedidos = json.pedidos || {};
       var claves = Object.keys(pedidos);
       var features = [];
@@ -138,20 +425,47 @@
       });
 
       vectorSource.addFeatures(features);
+      centradoEnRuta = features.length > 0;
       if (features.length > 0) {
         mapa.getView().fit(vectorSource.getExtent(), { padding: [90, 70, 90, 70], maxZoom: 17 });
       }
+      dibujarRecorrido();
     }
+
+    // El lado Android recarga la ruta después de sincronizarla con el servidor.
+    window.recargarRuta = cargarRuta;
+
+    // Y avisa del resultado de subir una entrega (para el botón y el detalle).
+    window.actualizarEstadoPedido = function (numero, sincronizado, error) {
+      vectorSource.getFeatures().forEach(function (f) {
+        if (String(f.get('numero')) !== String(numero)) { return; }
+        var p = f.get('pedido');
+        p.sincronizado = sincronizado === true;
+        if (error) { p.sync_error = error; } else { delete p.sync_error; }
+        f.set('estatus', p.estatus_entrega || 'PENDIENTE');
+        if (featureActual === f) { mostrarDetalle(f); }
+      });
+      capaPuntos.changed();
+    };
 
     // ---------- Panel de detalle ----------
     var detalle = document.getElementById('detalle');
     var featureActual = null;
+    var btnEntregar = document.getElementById('d-entregar');
 
-    function marcarEstadoActivo(estatus) {
-      var botones = document.querySelectorAll('.estado');
-      for (var i = 0; i < botones.length; i++) {
-        botones[i].classList.toggle('activo', botones[i].getAttribute('data-estado') === estatus);
-      }
+    /* Único cambio de estado disponible: entregado. Una vez marcado, el botón queda
+       desactivado para ese pedido: si no había internet, la entrega queda en cola y la
+       app la sube sola cuando vuelva la conexión. */
+    function pintarBotonEntrega(pedido) {
+      var estatus = pedido ? (pedido.estatus_entrega || 'PENDIENTE') : 'PENDIENTE';
+      var entregado = estatus === 'ENTREGADO';
+      var enviado = entregado && pedido.sincronizado === true;
+
+      btnEntregar.disabled = entregado;
+      btnEntregar.classList.toggle('activo', enviado);
+      btnEntregar.classList.toggle('pendiente-envio', entregado && !enviado);
+      btnEntregar.textContent = !entregado ? 'Marcar entregado'
+        : (enviado ? 'Entregado ✓' : 'Entregado · sin enviar');
     }
 
     function mostrarDetalle(feature) {
@@ -163,12 +477,20 @@
       document.getElementById('d-referencia').textContent = p.puntoreferencia || '—';
       document.getElementById('d-telefono').textContent = p.telefono_cliente || '—';
 
+      var filaSync = document.getElementById('d-sync');
+      if (p.sync_error) {
+        filaSync.style.display = '';
+        document.getElementById('d-sync-texto').textContent = p.sync_error;
+      } else {
+        filaSync.style.display = 'none';
+      }
+
       var tel = telefonoWhatsapp(p.telefono_cliente);
       document.getElementById('d-llamar').setAttribute('href', 'tel:+' + tel);
       document.getElementById('d-whatsapp').setAttribute('href',
         'whatsapp://send?phone=' + tel + '&text=' + encodeURIComponent('Pedido ' + (p.numero_pedido || '')));
 
-      marcarEstadoActivo(feature.get('estatus'));
+      pintarBotonEntrega(p);
       detalle.classList.add('visible');
     }
 
@@ -179,22 +501,28 @@
 
     document.getElementById('d-cerrar').addEventListener('click', cerrarDetalle);
 
-    var botonesEstado = document.querySelectorAll('.estado');
-    for (var i = 0; i < botonesEstado.length; i++) {
-      botonesEstado[i].addEventListener('click', function () {
-        if (!featureActual) { return; }
-        var nuevo = this.getAttribute('data-estado');
-        if (typeof AndroidRuta !== 'undefined') {
-          AndroidRuta.actualizarEstatusPedido(featureActual.get('numero'), nuevo);
-        }
-        featureActual.set('estatus', nuevo);
-        marcarEstadoActivo(nuevo);
-        capaPuntos.changed();
-      });
-    }
+    btnEntregar.addEventListener('click', function () {
+      if (!featureActual || btnEntregar.disabled) { return; }
+      var numero = featureActual.get('numero');
+      var p = featureActual.get('pedido');
+      // Se marca en local y queda en cola: el lado Android la sube ahora o al volver la red.
+      p.estatus_entrega = 'ENTREGADO';
+      p.sincronizado = false;
+      delete p.sync_error;
+      if (typeof AndroidRuta !== 'undefined') {
+        AndroidRuta.actualizarEstatusPedido(numero, 'ENTREGADO');
+      }
+      featureActual.set('estatus', 'ENTREGADO');
+      pintarBotonEntrega(p);
+      capaPuntos.changed();
+    });
 
     mapa.on('singleclick', function (evt) {
-      var feature = mapa.forEachFeatureAtPixel(evt.pixel, function (f) { return f; }, { hitTolerance: 14 });
+      // Solo los pedidos son seleccionables: el punto azul de ubicación puede estar
+      // encima del pedido (el repartidor parado en la dirección) y lo taparía.
+      var feature = mapa.forEachFeatureAtPixel(evt.pixel, function (f) {
+        return f.get('pedido') ? f : undefined;
+      }, { hitTolerance: 14 });
       if (feature) {
         mostrarDetalle(feature);
       } else {

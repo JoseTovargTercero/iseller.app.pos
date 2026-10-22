@@ -9,6 +9,8 @@ import androidx.core.content.ContextCompat;
 import android.annotation.SuppressLint;
 import android.content.Context;
 import android.content.SharedPreferences;
+import android.content.res.ColorStateList;
+import android.graphics.Bitmap;
 import android.graphics.Color;
 import android.graphics.drawable.ColorDrawable;
 import android.hardware.fingerprint.FingerprintManager;
@@ -55,7 +57,7 @@ import javax.crypto.spec.GCMParameterSpec;
 public class Login extends AppCompatActivity implements View.OnClickListener {
 
     // Endpoint de login (API_LOGIN_APP.md §2)
-    private static final String URL_AUTH_LOGIN = "https://iseller-tiendas.com/api/auth_login.php";
+    private static final String URL_AUTH_LOGIN = BuildConfig.POS_BASE_URL + "/api/auth_login.php";
 
     // Almacenamiento seguro (KeyStore AES/GCM + SharedPreferences privadas)
     private static final String PREFS_AUTH = "pos_auth_seguro";
@@ -69,6 +71,7 @@ public class Login extends AppCompatActivity implements View.OnClickListener {
     ImageButton btnHuella;
     private WebView posWebView;
     private AlertDialog dialogoHuella;
+    private boolean volviendoAlLogin;
 
     private BiometricPrompt biometricPrompt;
     private BiometricPrompt.PromptInfo promptInfo;
@@ -87,6 +90,21 @@ public class Login extends AppCompatActivity implements View.OnClickListener {
 
         btnEntrar.setOnClickListener(this);
         btnHuella.setOnClickListener(this);
+        actualizarBotonHuella();
+
+        // Pre-calentar el motor Chromium mientras el usuario se autentica
+        prepararWebView();
+    }
+
+    /**
+     * La huella solo sirve si este teléfono guardó las credenciales de un usuario: sin ellas
+     * el botón queda en gris (y al tocarlo se explica cómo activarlo).
+     */
+    private void actualizarBotonHuella() {
+        boolean hayCredenciales = tieneCredencialesGuardadas();
+        btnHuella.setAlpha(hayCredenciales ? 1f : 0.45f);
+        btnHuella.setImageTintList(ColorStateList.valueOf(ContextCompat.getColor(this,
+                hayCredenciales ? R.color.pos_primary : R.color.pos_muted)));
     }
 
     @Override
@@ -215,6 +233,9 @@ public class Login extends AppCompatActivity implements View.OnClickListener {
                     .putString("cedula", usuario)
                     .apply();
 
+            // Push: el servidor necesita el token de este dispositivo para notificarle
+            PosFcmService.registrarEnServidor(this, usuario);
+
             abrirSistemaWebView(sessionUrl);
         } catch (Exception e) {
             Toast.makeText(this, "Respuesta inválida del servidor", Toast.LENGTH_LONG).show();
@@ -222,14 +243,21 @@ public class Login extends AppCompatActivity implements View.OnClickListener {
     }
 
     @SuppressLint("SetJavaScriptEnabled")
-    private void abrirSistemaWebView(String sessionUrl) {
+    private void prepararWebView() {
+        if (posWebView != null) {
+            return;
+        }
         posWebView = new WebView(this);
+        posWebView.setBackgroundColor(Color.parseColor("#181B22"));
+        posWebView.setLayerType(View.LAYER_TYPE_HARDWARE, null);
+
         WebSettings s = posWebView.getSettings();
         s.setJavaScriptEnabled(true);
         s.setDomStorageEnabled(true);
         s.setDatabaseEnabled(true);
         s.setLoadWithOverviewMode(true);
         s.setUseWideViewPort(true);
+        s.setCacheMode(WebSettings.LOAD_DEFAULT);
 
         CookieManager cm = CookieManager.getInstance();
         cm.setAcceptCookie(true);
@@ -239,15 +267,100 @@ public class Login extends AppCompatActivity implements View.OnClickListener {
             @Override
             public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
                 String url = request.getUrl().toString();
-                if (url.contains("login.php?app_error=token")) {
-                    Toast.makeText(Login.this, "La sesión expiró. Inicia sesión de nuevo.", Toast.LENGTH_LONG).show();
-                    recreate();
+                if (esCierreDeSesion(url)) {
+                    cerrarSesionWeb(url);
+                    return true;   // no se navega: el usuario vuelve al login nativo
+                }
+                if (esLoginWeb(url)) {
+                    volverAlLogin("La sesión expiró. Inicia sesión de nuevo.");
                     return true;
                 }
                 return false;
             }
-        });
 
+            @Override
+            public void onPageStarted(WebView view, String url, Bitmap favicon) {
+                // Las redirecciones 302 no pasan por shouldOverrideUrlLoading (p. ej. cuando el
+                // servidor expulsa la sesión), así que aquí va el respaldo.
+                if (esCierreDeSesion(url)) {
+                    volverAlLogin("Sesión cerrada.");
+                } else if (esLoginWeb(url)) {
+                    volverAlLogin("La sesión expiró. Inicia sesión de nuevo.");
+                }
+            }
+        });
+    }
+
+    /**
+     * El POS cierra sesión en `login/salir.php`; el resto del sistema usa variantes con
+     * "logout" (admin, tienda). Cualquiera de las dos significa que la sesión del WebView murió.
+     */
+    private boolean esCierreDeSesion(String url) {
+        String minuscula = url.toLowerCase();
+        return minuscula.contains("/salir.php") || minuscula.contains("/logout");
+    }
+
+    /** Página de login de la web: la sesión caducó o el usuario fue expulsado. */
+    private boolean esLoginWeb(String url) {
+        return url.contains("/login.php");
+    }
+
+    /**
+     * La navegación a `salir.php` se bloquea, así que el servidor no se enteraría: se le pide
+     * el cierre de sesión aparte, con la cookie del WebView. Después, vuelta al login nativo.
+     */
+    private void cerrarSesionWeb(final String url) {
+        final String cookie = CookieManager.getInstance().getCookie(url);
+        Volley.newRequestQueue(this).add(new StringRequest(Request.Method.GET, url,
+                response -> {
+                },
+                error -> {
+                }) {
+            @Override
+            public Map<String, String> getHeaders() {
+                Map<String, String> cabeceras = new HashMap<>();
+                if (cookie != null) {
+                    cabeceras.put("Cookie", cookie);
+                }
+                return cabeceras;
+            }
+        });
+        volverAlLogin("Sesión cerrada.");
+    }
+
+    /** Tira el WebView (y sus cookies) y vuelve a la pantalla de login nativa. */
+    private void volverAlLogin(final String mensaje) {
+        if (volviendoAlLogin) {
+            return;
+        }
+        volviendoAlLogin = true;
+
+        final Runnable volver = () -> {
+            WebView webView = posWebView;
+            posWebView = null;
+            if (webView != null) {
+                webView.stopLoading();
+                webView.loadUrl("about:blank");
+                webView.destroy();
+            }
+            // Sin cookie no hay sesión: ni el WebView ni un login posterior la reutilizan
+            CookieManager cookies = CookieManager.getInstance();
+            cookies.removeAllCookies(null);
+            cookies.flush();
+            Toast.makeText(Login.this, mensaje, Toast.LENGTH_LONG).show();
+            recreate();
+        };
+
+        if (posWebView != null) {
+            posWebView.post(volver);   // fuera del callback del WebView, que se está destruyendo
+        } else {
+            volver.run();
+        }
+    }
+
+    private void abrirSistemaWebView(String sessionUrl) {
+        prepararWebView();
+        volviendoAlLogin = false;   // sesión nueva: vuelve a poder cerrarse
         setContentView(posWebView);
         posWebView.loadUrl(sessionUrl);
     }
@@ -271,6 +384,15 @@ public class Login extends AppCompatActivity implements View.OnClickListener {
     }
 
     private void guardarCredencialesSeguras(String usuario, String password) {
+        String[] previas = obtenerCredencialesSeguras();
+        if (previas != null && !previas[0].equalsIgnoreCase(usuario)) {
+            // El teléfono cambió de manos: las credenciales del usuario anterior se borran y
+            // no se guardan las nuevas, así la huella no sirve para entrar como el anterior.
+            borrarCredencialesGuardadas();
+            actualizarBotonHuella();
+            Toast.makeText(this, "Se borró la huella del usuario anterior.", Toast.LENGTH_LONG).show();
+            return;
+        }
         try {
             SecretKey key = obtenerOGenerarClaveCredenciales();
             String encUser = cifrar(usuario, key);
@@ -283,6 +405,14 @@ public class Login extends AppCompatActivity implements View.OnClickListener {
         } catch (Exception e) {
             e.printStackTrace();
         }
+    }
+
+    private void borrarCredencialesGuardadas() {
+        getSharedPreferences(PREFS_AUTH, Context.MODE_PRIVATE)
+                .edit()
+                .remove(KEY_USER)
+                .remove(KEY_PASS)
+                .apply();
     }
 
     private String[] obtenerCredencialesSeguras() {

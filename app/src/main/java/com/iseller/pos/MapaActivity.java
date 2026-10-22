@@ -1,17 +1,32 @@
 package com.iseller.pos;
 
-import android.content.Context;
+import android.Manifest;
 import android.content.Intent;
+import android.content.pm.PackageManager;
+import android.hardware.Sensor;
+import android.hardware.SensorEvent;
+import android.hardware.SensorEventListener;
+import android.hardware.SensorManager;
+import android.location.Location;
+import android.location.LocationListener;
+import android.location.LocationManager;
+import android.net.ConnectivityManager;
+import android.net.Network;
 import android.net.Uri;
 import android.os.Bundle;
+import android.os.Looper;
 import android.webkit.JavascriptInterface;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebResourceResponse;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
+import android.widget.Toast;
 
+import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.core.app.ActivityCompat;
+import androidx.core.content.ContextCompat;
 
 import org.json.JSONObject;
 
@@ -30,7 +45,11 @@ import java.util.Map;
 
 /**
  * Fases 3 y 4: visor OpenLayers (offline, en assets/) con caché persistente de teselas
- * en getFilesDir()/tiles/ y puente JS para leer/actualizar el JSON de la ruta.
+ * en getFilesDir()/tiles/, puente JS para leer/actualizar el JSON de la ruta y la
+ * posición/rumbo del usuario (GPS + brújula).
+ *
+ * Sincronización: al abrir el mapa se sube la cola de entregas y se vuelve a bajar la ruta
+ * (por si el POS agregó pedidos); lo mismo hace el botón "Actualizar ruta". Ver RutaSync.
  */
 public class MapaActivity extends AppCompatActivity {
 
@@ -38,9 +57,20 @@ public class MapaActivity extends AppCompatActivity {
 
     private static final String HOST_TESELAS = "tile.openstreetmap.org/";
     private static final String USER_AGENT = "iSellerPOS/1.0 (Android)";
+    private static final int REQ_UBICACION = 41;
 
     private WebView webView;
     private String archivoRuta;
+    private ConnectivityManager.NetworkCallback redCallback;
+    private boolean sincronizadoAlAbrir = false;
+
+    private LocationManager locationManager;
+    private SensorManager sensorManager;
+    private Sensor sensorRotacion;
+    private Location ultimaUbicacion;
+    private Float ultimoRumbo;
+    private long ultimoEnvio = 0L;
+    private boolean paginaLista = false;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -63,8 +93,50 @@ public class MapaActivity extends AppCompatActivity {
         settings.setCacheMode(WebSettings.LOAD_DEFAULT);
 
         webView.addJavascriptInterface(new RutaBridge(), "AndroidRuta");
-        webView.setWebViewClient(new MapaWebViewClient(this));
+        webView.setWebViewClient(new MapaWebViewClient());
         webView.loadUrl("file:///android_asset/mapa_ruta.html");
+
+        // Al volver la conexión se sube lo que quedó en cola
+        ConnectivityManager conectividad = (ConnectivityManager) getSystemService(CONNECTIVITY_SERVICE);
+        if (conectividad != null) {
+            redCallback = new ConnectivityManager.NetworkCallback() {
+                @Override
+                public void onAvailable(Network red) {
+                    subirCola();
+                }
+            };
+            conectividad.registerDefaultNetworkCallback(redCallback);
+        }
+
+        locationManager = (LocationManager) getSystemService(LOCATION_SERVICE);
+        sensorManager = (SensorManager) getSystemService(SENSOR_SERVICE);
+        if (sensorManager != null) {
+            sensorRotacion = sensorManager.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR);
+        }
+        pedirUbicacion();
+    }
+
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        if (redCallback != null) {
+            ConnectivityManager conectividad = (ConnectivityManager) getSystemService(CONNECTIVITY_SERVICE);
+            if (conectividad != null) {
+                try {
+                    conectividad.unregisterNetworkCallback(redCallback);
+                } catch (Exception ignored) {
+                }
+            }
+        }
+        if (locationManager != null) {
+            try {
+                locationManager.removeUpdates(locationListener);
+            } catch (Exception ignored) {
+            }
+        }
+        if (sensorManager != null) {
+            sensorManager.unregisterListener(sensorListener);
+        }
     }
 
     @Override
@@ -76,7 +148,116 @@ public class MapaActivity extends AppCompatActivity {
         }
     }
 
-    /** Puente expuesto a la página como window.AndroidRuta. */
+    // ------------------------------------------------------------------
+    // Ubicación y brújula
+    // ------------------------------------------------------------------
+
+    private void pedirUbicacion() {
+        boolean concedido = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
+                == PackageManager.PERMISSION_GRANTED;
+        if (concedido) {
+            iniciarUbicacion();
+        } else {
+            ActivityCompat.requestPermissions(this,
+                    new String[]{Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION},
+                    REQ_UBICACION);
+        }
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode == REQ_UBICACION && grantResults.length > 0
+                && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+            iniciarUbicacion();
+        }
+        // Si se deniega, el mapa funciona igual (sin el punto de ubicación).
+    }
+
+    private void iniciarUbicacion() {
+        try {
+            Location previa = locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER);
+            if (previa == null) {
+                previa = locationManager.getLastKnownLocation(LocationManager.NETWORK_PROVIDER);
+            }
+            if (previa != null) {
+                ultimaUbicacion = previa;
+            }
+            locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 2000, 3f, locationListener, Looper.getMainLooper());
+            locationManager.requestLocationUpdates(LocationManager.NETWORK_PROVIDER, 5000, 10f, locationListener, Looper.getMainLooper());
+        } catch (SecurityException | IllegalArgumentException e) {
+            // sin permiso efectivo o proveedor no disponible
+        }
+        if (sensorManager != null && sensorRotacion != null) {
+            sensorManager.registerListener(sensorListener, sensorRotacion, SensorManager.SENSOR_DELAY_UI);
+        }
+    }
+
+    private final LocationListener locationListener = new LocationListener() {
+        @Override
+        public void onLocationChanged(Location location) {
+            ultimaUbicacion = location;
+            enviarUbicacion(true);
+        }
+
+        @Override
+        public void onStatusChanged(String provider, int status, Bundle extras) {
+        }
+
+        @Override
+        public void onProviderEnabled(String provider) {
+        }
+
+        @Override
+        public void onProviderDisabled(String provider) {
+        }
+    };
+
+    private final SensorEventListener sensorListener = new SensorEventListener() {
+        private final float[] matriz = new float[9];
+        private final float[] orientacion = new float[3];
+
+        @Override
+        public void onSensorChanged(SensorEvent event) {
+            SensorManager.getRotationMatrixFromVector(matriz, event.values);
+            SensorManager.getOrientation(matriz, orientacion);
+            float grados = (float) Math.toDegrees(orientacion[0]);
+            if (grados < 0) {
+                grados += 360f;
+            }
+            // Solo si el rumbo cambió lo suficiente (evita mandar cada milésima).
+            if (ultimoRumbo != null && Math.abs(grados - ultimoRumbo) < 3f) {
+                return;
+            }
+            ultimoRumbo = grados;
+            enviarUbicacion(false);
+        }
+
+        @Override
+        public void onAccuracyChanged(Sensor sensor, int accuracy) {
+        }
+    };
+
+    /** Manda a la página la última posición y rumbo conocidos. */
+    private void enviarUbicacion(boolean forzar) {
+        if (!paginaLista || webView == null || ultimaUbicacion == null) {
+            return;
+        }
+        long ahora = System.currentTimeMillis();
+        if (!forzar && ahora - ultimoEnvio < 200) {
+            return;
+        }
+        ultimoEnvio = ahora;
+        String rumbo = (ultimoRumbo != null) ? String.valueOf(ultimoRumbo) : "null";
+        String js = "if (window.ubicacionUsuario) { window.ubicacionUsuario("
+                + ultimaUbicacion.getLatitude() + "," + ultimaUbicacion.getLongitude() + "," + rumbo + "); }";
+        webView.evaluateJavascript(js, null);
+    }
+
+    // ------------------------------------------------------------------
+    // Puente expuesto a la página como window.AndroidRuta
+    // ------------------------------------------------------------------
+
     private class RutaBridge {
 
         @JavascriptInterface
@@ -96,38 +277,81 @@ public class MapaActivity extends AppCompatActivity {
             if (archivoRuta == null) {
                 return;
             }
-            File archivo = new File(RutaJson.carpeta(MapaActivity.this), archivoRuta);
-            try {
-                JSONObject ruta = new JSONObject(RutaJson.leer(archivo));
-                JSONObject pedidos = RutaJson.normalizarPedidos(ruta.opt("pedidos"));
-                if (pedidos == null) {
-                    return;
-                }
-                Iterator<String> claves = pedidos.keys();
-                while (claves.hasNext()) {
-                    JSONObject pedido = pedidos.getJSONObject(claves.next());
-                    if (numeroPedido.equals(pedido.optString("numero_pedido"))) {
-                        pedido.put("estatus_entrega", nuevoEstatus);
-                        break;
-                    }
-                }
-                ruta.put("pedidos", pedidos);
-                RutaJson.escribir(archivo, ruta.toString());
-            } catch (Exception ignored) {
+            if ("ENTREGADO".equals(nuevoEstatus)) {
+                RutaSync.marcarEntregado(archivoDeRuta(), numeroPedido);
+                subirCola();
             }
+        }
+
+        @JavascriptInterface
+        public void actualizarRuta() {
+            if (archivoRuta != null) {
+                MapaActivity.this.actualizarRuta();
+            }
+        }
+
+        @JavascriptInterface
+        public void mostrarToast(String mensaje) {
+            aviso(mensaje);
         }
     }
 
-    /**
-     * Sirve las teselas desde getFilesDir()/tiles/ (descarga+cachea si faltan) y
-     * abre teléfono/WhatsApp en apps externas.
-     */
-    private static class MapaWebViewClient extends WebViewClient {
+    // ------------------------------------------------------------------
+    // Sincronización con el servidor (ver RutaSync)
+    // ------------------------------------------------------------------
 
-        private final Context context;
+    private File archivoDeRuta() {
+        return new File(RutaJson.carpeta(this), archivoRuta);
+    }
 
-        MapaWebViewClient(Context context) {
-            this.context = context.getApplicationContext();
+    /** Sube la cola de entregas hechas en este dispositivo y refresca el estado en la página. */
+    private void subirCola() {
+        if (archivoRuta == null) {
+            return;
+        }
+        RutaSync.enviarPendientes(this, archivoDeRuta(), (numero, ok, error) -> evaluar(
+                "window.actualizarEstadoPedido(" + JSONObject.quote(numero) + "," + ok + ","
+                        + JSONObject.quote(error == null ? "" : error) + ")"));
+    }
+
+    /** Primero sube la cola y después vuelve a bajar la ruta (por si hay pedidos nuevos). */
+    private void actualizarRuta() {
+        RutaSync.actualizar(archivoDeRuta(), (nuevos, fallo) -> {
+            if (fallo != null) {
+                aviso(fallo);
+            } else if (nuevos == 1) {
+                aviso("Ruta actualizada: 1 pedido nuevo.");
+            } else if (nuevos > 1) {
+                aviso("Ruta actualizada: " + nuevos + " pedidos nuevos.");
+            }
+            evaluar("window.recargarRuta()");
+        });
+    }
+
+    private void evaluar(final String js) {
+        runOnUiThread(() -> {
+            if (webView != null) {
+                webView.evaluateJavascript(js, null);
+            }
+        });
+    }
+
+    private void aviso(final String mensaje) {
+        runOnUiThread(() -> Toast.makeText(this, mensaje, Toast.LENGTH_LONG).show());
+    }
+
+    /** Teselas desde getFilesDir()/tiles/ + apertura de teléfono/WhatsApp. */
+    private class MapaWebViewClient extends WebViewClient {
+
+        @Override
+        public void onPageFinished(WebView view, String url) {
+            paginaLista = true;
+            enviarUbicacion(true);
+            // 100% sincronizado al abrir: sube la cola y trae los pedidos nuevos del POS
+            if (!sincronizadoAlAbrir && archivoRuta != null) {
+                sincronizadoAlAbrir = true;
+                actualizarRuta();
+            }
         }
 
         @Override
@@ -137,7 +361,7 @@ public class MapaActivity extends AppCompatActivity {
                 try {
                     Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
                     intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-                    context.startActivity(intent);
+                    getApplicationContext().startActivity(intent);
                 } catch (Exception ignored) {
                     // no hay app que maneje el esquema
                 }
@@ -169,7 +393,7 @@ public class MapaActivity extends AppCompatActivity {
             String x = partes[1];
             String y = partes[2].replace(".png", "");
 
-            File carpeta = new File(context.getFilesDir(), "tiles/" + z);
+            File carpeta = new File(getApplicationContext().getFilesDir(), "tiles/" + z);
             File archivo = new File(carpeta, x + "_" + y + ".png");
 
             if (archivo.exists()) {

@@ -12,14 +12,12 @@ import android.widget.Toast;
 
 import androidx.appcompat.app.AppCompatActivity;
 
-import com.android.volley.NetworkResponse;
 import com.android.volley.Request;
 import com.android.volley.Response;
 import com.android.volley.VolleyError;
 import com.android.volley.toolbox.StringRequest;
 import com.android.volley.toolbox.Volley;
 
-import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.io.File;
@@ -27,7 +25,6 @@ import java.io.FilenameFilter;
 import java.util.Arrays;
 import java.util.Comparator;
 import java.util.HashMap;
-import java.util.Iterator;
 import java.util.Map;
 import java.util.regex.Pattern;
 
@@ -35,15 +32,12 @@ import java.util.regex.Pattern;
  * Fases 1 y 2: interfaz/captura del código de ruta, petición al endpoint y
  * guardado local en getFilesDir()/rutas/ (persistente).
  *
- * Mientras el endpoint real no exista, USAR_MOCK simula la respuesta JSON.
- * Contrato del endpoint: ver API_RUTA_ENTREGA.md
+ * El contrato del endpoint está en el README de la API (api/README.md).
  */
 public class RutaEntrega extends AppCompatActivity {
 
-    private static final boolean USAR_MOCK = true; // Fase 2: poner en false cuando exista el endpoint
-    private static final String URL_RUTA = "https://TU-DOMINIO-POS/api/ruta_entrega.php?codigo=";
+    private static final String URL_RUTA = BuildConfig.POS_BASE_URL + "/api/ruta_entrega.php?codigo=";
     private static final Pattern FORMATO_CODIGO = Pattern.compile("^\\d{4}-[a-zA-Z]{4}$");
-    private static final String ESTATUS_PENDIENTE = "PENDIENTE";
 
     private EditText etCodigoRuta;
     private LinearLayout contenedorRutas;
@@ -128,15 +122,13 @@ public class RutaEntrega extends AppCompatActivity {
             return;
         }
 
-        if (USAR_MOCK) {
-            procesarRespuesta(generarMock());
-            return;
-        }
-
         if (BuildConfig.POS_API_KEY.isEmpty()) {
             Toast.makeText(this, "Falta configurar POS_API_KEY en local.properties.", Toast.LENGTH_LONG).show();
             return;
         }
+
+        // Antes de pedir la ruta se sube lo que quedó en cola de otras rutas
+        RutaSync.enviarPendientes(this);
 
         StringRequest peticion = new StringRequest(Request.Method.GET, URL_RUTA + codigo,
                 new Response.Listener<String>() {
@@ -148,7 +140,9 @@ public class RutaEntrega extends AppCompatActivity {
                 new Response.ErrorListener() {
                     @Override
                     public void onErrorResponse(VolleyError error) {
-                        Toast.makeText(RutaEntrega.this, mensajeDeError(error), Toast.LENGTH_LONG).show();
+                        Toast.makeText(RutaEntrega.this,
+                                RutaJson.mensajeDeError(error, "No se pudo cargar la ruta. Revisa tu conexión."),
+                                Toast.LENGTH_LONG).show();
                     }
                 }) {
             @Override
@@ -161,23 +155,6 @@ public class RutaEntrega extends AppCompatActivity {
             }
         };
         Volley.newRequestQueue(this).add(peticion);
-    }
-
-    /** Muestra el mensaje del servidor ({"error": ...}) si viene en el cuerpo del error. */
-    private String mensajeDeError(VolleyError error) {
-        NetworkResponse respuesta = error.networkResponse;
-        if (respuesta != null && respuesta.data != null) {
-            try {
-                String mensaje = new JSONObject(new String(respuesta.data, "UTF-8")).optString("error", "");
-                if (!mensaje.isEmpty()) {
-                    return mensaje;
-                }
-            } catch (Exception ignored) {
-                // cuerpo no JSON
-            }
-            return "Error del servidor (" + respuesta.statusCode + ").";
-        }
-        return "No se pudo cargar la ruta. Revisa tu conexión.";
     }
 
     // ------------------------------------------------------------------
@@ -201,49 +178,30 @@ public class RutaEntrega extends AppCompatActivity {
             }
 
             File archivo = new File(RutaJson.carpeta(this), RutaJson.nombreArchivo(nombre));
-            JSONObject estatusPrevios = cargarEstatusPrevios(archivo);
+            boolean existia = archivo.exists();
 
-            Iterator<String> claves = pedidos.keys();
-            while (claves.hasNext()) {
-                String clave = claves.next();
-                JSONObject pedido = pedidos.getJSONObject(clave);
-                String numero = pedido.optString("numero_pedido", clave);
-                // Conserva el avance previo si la ruta ya estaba guardada.
-                pedido.put("estatus_entrega", estatusPrevios.optString(numero, ESTATUS_PENDIENTE));
-            }
-
-            ruta.put("pedidos", pedidos);
-            RutaJson.escribir(archivo, ruta.toString());
-
-            Toast.makeText(this, "Ruta guardada: " + nombre, Toast.LENGTH_LONG).show();
-            etCodigoRuta.setText("");
-            cargarRutasGuardadas();
-        } catch (JSONException | java.io.IOException e) {
-            Toast.makeText(this, "Error al procesar la ruta.", Toast.LENGTH_LONG).show();
-        }
-    }
-
-    private JSONObject cargarEstatusPrevios(File archivo) {
-        JSONObject estatus = new JSONObject();
-        if (!archivo.exists()) {
-            return estatus;
-        }
-        try {
-            JSONObject ruta = new JSONObject(RutaJson.leer(archivo));
-            JSONObject pedidos = RutaJson.normalizarPedidos(ruta.opt("pedidos"));
-            if (pedidos != null) {
-                Iterator<String> claves = pedidos.keys();
-                while (claves.hasNext()) {
-                    String clave = claves.next();
-                    JSONObject pedido = pedidos.getJSONObject(clave);
-                    estatus.put(pedido.optString("numero_pedido", clave),
-                            pedido.optString("estatus_entrega", ESTATUS_PENDIENTE));
+            // Mezcla con lo que ya había en el dispositivo: las entregas locales se respetan
+            // y los pedidos nuevos se cuentan (mismo criterio que al actualizar desde el mapa).
+            JSONObject locales = null;
+            if (existia) {
+                try {
+                    locales = RutaJson.normalizarPedidos(new JSONObject(RutaJson.leer(archivo)).opt("pedidos"));
+                } catch (Exception ignored) {
+                    // archivo corrupto: se regenera desde el servidor
                 }
             }
-        } catch (Exception ignored) {
-            // archivo corrupto o ilegible -> se regenera desde cero
+            int nuevos = RutaSync.mezclar(ruta, locales, pedidos);
+            RutaJson.escribir(archivo, ruta.toString());
+
+            String mensaje = (existia && nuevos > 0)
+                    ? "Ruta actualizada: " + nuevos + (nuevos == 1 ? " pedido nuevo" : " pedidos nuevos")
+                    : "Ruta guardada: " + nombre;
+            Toast.makeText(this, mensaje, Toast.LENGTH_LONG).show();
+            etCodigoRuta.setText("");
+            cargarRutasGuardadas();
+        } catch (Exception e) {
+            Toast.makeText(this, "Error al procesar la ruta.", Toast.LENGTH_LONG).show();
         }
-        return estatus;
     }
 
     // ------------------------------------------------------------------
@@ -298,45 +256,5 @@ public class RutaEntrega extends AppCompatActivity {
         } catch (Exception ignored) {
         }
         return archivo.getName().replaceFirst("(?i)\\.json$", "").replace('_', ' ');
-    }
-
-    // ------------------------------------------------------------------
-    // Mock temporal (Fase 2)
-    // ------------------------------------------------------------------
-
-    /** Simula la respuesta del endpoint. Ver API_RUTA_ENTREGA.md. */
-    private String generarMock() {
-        try {
-            JSONObject ruta = new JSONObject();
-            ruta.put("fecha_ruta", "2026-10-20");
-            ruta.put("nombre", "Ruta Norte - Mañana");
-
-            JSONObject pedidos = new JSONObject();
-            pedidos.put("0", mockPedido("10.4806,-66.9036", "Av. Bolívar, Local 4",
-                    "Frente a la plaza", "Juan Pérez", "04120000000", "PED-001"));
-            pedidos.put("1", mockPedido("10.4899,-66.9210", "Calle 5 con Av. 2",
-                    "Casa de reja negra", "María Gómez", "04140000000", "PED-002"));
-            pedidos.put("2", mockPedido("10.4700,-66.8900", "Urb. Los Chaguaramos, Torre B",
-                    "Piso 3, apartamento 3B", "Carlos Rivas", "04260000000", "PED-003"));
-            pedidos.put("3", mockPedido("10.4950,-66.9120", "Av. Sucre, Galpón 2",
-                    "Portón azul", "Ana Torres", "04120001111", "PED-004"));
-            ruta.put("pedidos", pedidos);
-
-            return ruta.toString();
-        } catch (JSONException e) {
-            return "{\"error\":\"mock\"}";
-        }
-    }
-
-    private JSONObject mockPedido(String coords, String direccion, String referencia,
-                                  String cliente, String telefono, String numero) throws JSONException {
-        JSONObject pedido = new JSONObject();
-        pedido.put("coords", coords);
-        pedido.put("direccion", direccion);
-        pedido.put("puntoreferencia", referencia);
-        pedido.put("nombre_cliente", cliente);
-        pedido.put("telefono_cliente", telefono);
-        pedido.put("numero_pedido", numero);
-        return pedido;
     }
 }

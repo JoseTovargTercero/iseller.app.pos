@@ -211,9 +211,29 @@ webView.clearCache(true);
 webView.clearHistory();
 ```
 
+**Detectar el "Cerrar sesión" de la web** (implementado en `Login.java`):
+
+- El panel cierra sesión con un enlace a `login/salir.php` (`session_destroy()` + `302` a `../inventario`).
+- El WebView vigila dos señales, porque una redirección `302` **no** pasa por
+  `shouldOverrideUrlLoading`:
+  - `shouldOverrideUrlLoading`: si la URL es `salir.php`/`.../logout`, se bloquea la navegación, se
+    pide el cierre de sesión al servidor por separado **con la cookie del WebView** y se vuelve al
+    login nativo (evita que se vea la web un instante).
+  - `onPageStarted`: respaldo. Detecta cuando la sesión murió del lado del servidor y la navegación
+    llega por redirección (`salir.php` o `login.php`, p. ej. expulsión o sesión caducada).
+- En los dos casos: se destruye el WebView, se borran las cookies y se vuelve a
+  `activity_login.xml`.
+- Ojo: el token de FCM del dispositivo **no** se da de baja al cerrar sesión; para eso hay que llamar
+  a `api/push_registrar.php` con `action=baja` (ver `api/README_PUSH.md`).
+
 ### 4.5 Notas de integración
-- **HTTPS obligatorio en producción**: la cookie se emite con `Secure`, así que en `http://`
-  el WebView no la guardará. En desarrollo (`http://localhost`) el servidor la emite sin `Secure`.
+- **Huella dactilar (login nativo)**: las credenciales se cifran con Android KeyStore y se guardan en
+  el dispositivo tras el primer login con usuario/contraseña. El botón de huella sale **en gris** si no
+  hay credenciales guardadas. Si entra **otro usuario** distinto al guardado, las credenciales locales
+  se **borran** (el teléfono cambió de manos) y el botón vuelve a gris: la huella nunca sirve para
+  entrar como el usuario anterior.
+- **HTTPS obligatorio en producción**: la cookie se emite con `Secure`, así que sobre `http://`
+  el WebView no la guardará. En producción (`https://iseller-tiendas.com/inventario`) no hay problema.
 - El WebView ya navega autenticado tras el primer `loadUrl(sessionUrl)`; **no inyectes cookies**
   a mano.
 - Si el usuario ya estaba logueado, no vuelvas a pedir `auth_login.php` en cada navegación:

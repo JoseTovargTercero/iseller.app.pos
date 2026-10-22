@@ -67,7 +67,7 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="6dp"
             android:gravity="center"
-            android:text="Ingresa con tu cédula y contraseña."
+            android:text="Ingresa con tu email y contraseña."
             android:textColor="@color/pos_muted"
             android:textSize="14sp" />
     </LinearLayout>
@@ -83,8 +83,8 @@
         android:drawableStart="@drawable/ic_baseline_account_circle_24"
         android:drawablePadding="12dp"
         android:drawableTint="@color/pos_muted"
-        android:hint="Cédula"
-        android:inputType="phone"
+        android:hint="Email"
+        android:inputType="textEmailAddress"
         android:maxLines="1"
         android:paddingStart="16dp"
         android:paddingEnd="16dp"

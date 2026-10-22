@@ -1,25 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="purple_200">#C472B1CD</color>
-    <color name="purple_500">#00CCFF</color>
-    <color name="purple_700">#E400CCFF</color>
-    <color name="teal_200">#FFE6E6E6</color>
-    <color name="teal_700">#FFFFFF</color>
-    <color name="black">#FF000000</color>
-    <color name="white">#FFFFFFFF</color>
-    <color name="fondo">#121212</color>
-
-    <color name="solid_dark">#273443</color>
-    <color name="solid_dark_op">#10131a</color>
-    <color name="gray">#C9C9C9</color>
     <color name="gris1">#777777</color>
-    <color name="lightGray">#1BE8E8E8</color>
-    <color name="Darkgray">#7A7A7A</color>
-    <color name="popUp">#F2BABABA</color>
     <color name="button_color">#3e74ac</color>
-    <color name="buttonBackground">#FF6200EE</color>
     <color name="button_gris">#898BB3</color>
-    <color name="button_blue">#3e74ac</color> <!-- Ejemplo de color púrpura -->
 
     <!-- Tokens del sistema iSeller (POS_ESTILOS_ANDROID.md) -->
     <color name="pos_bg">#181B22</color>

@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "705083178688",
+    "project_id": "iseller-e25a8",
+    "storage_bucket": "iseller-e25a8.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:705083178688:android:0dc85844e87cece998f725",
+        "android_client_info": {
+          "package_name": "com.iseller.pos"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCo8Nn21hdCNki-srRhJlll06WGgJ4fLCI"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

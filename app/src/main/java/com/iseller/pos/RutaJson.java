@@ -2,6 +2,9 @@ package com.iseller.pos;
 
 import android.content.Context;
 
+import com.android.volley.NetworkResponse;
+import com.android.volley.VolleyError;
+
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -11,12 +14,31 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.text.Normalizer;
 
 /** Utilidades compartidas de las rutas de entrega (archivos en getFilesDir()/rutas/). */
 final class RutaJson {
 
     private RutaJson() {
+    }
+
+    /** Mensaje de error del servidor ({"error": ...}) o el texto indicado si no hubo respuesta. */
+    static String mensajeDeError(VolleyError error, String sinRespuesta) {
+        NetworkResponse respuesta = error.networkResponse;
+        if (respuesta != null && respuesta.data != null) {
+            try {
+                String mensaje = new JSONObject(new String(respuesta.data, StandardCharsets.UTF_8))
+                        .optString("error", "");
+                if (!mensaje.isEmpty()) {
+                    return mensaje;
+                }
+            } catch (Exception ignored) {
+                // el cuerpo no era JSON
+            }
+            return "Error del servidor (" + respuesta.statusCode + ").";
+        }
+        return sinRespuesta;
     }
 
     static File carpeta(Context context) {

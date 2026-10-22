@@ -1,6 +1,9 @@
 package com.iseller.pos;
 
+import android.Manifest;
 import android.content.Intent;
+import android.content.pm.PackageManager;
+import android.os.Build;
 import android.os.Bundle;
 import android.provider.Settings;
 import android.view.View;
@@ -11,6 +14,8 @@ import android.widget.ImageView;
 import android.widget.TextView;
 
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.core.app.ActivityCompat;
+import androidx.core.content.ContextCompat;
 
 /**
  * Pantalla de bienvenida (inicio). Ya no permite crear cuenta: solo ofrece
@@ -39,7 +44,30 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         btnLoginPos.setOnClickListener(this);
         btnRutaEntrega.setOnClickListener(this);
 
+        // Push FCM: guardar el token del dispositivo y pedir permiso de notificaciones (Android 13+)
+        PosFcmService.sincronizarToken(this);
+        pedirPermisoNotificaciones();
+
+        // Entregas marcadas sin conexión: se intentan subir al abrir la app
+        RutaSync.enviarPendientes(this);
+
         animarEntrada();
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        AppUpdater.continuarInstalacionPendiente(this);
+        AppUpdater.verificar(this);
+    }
+
+    private void pedirPermisoNotificaciones() {
+        if (Build.VERSION.SDK_INT >= 33
+                && ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
+                != PackageManager.PERMISSION_GRANTED) {
+            ActivityCompat.requestPermissions(this,
+                    new String[]{Manifest.permission.POST_NOTIFICATIONS}, 100);
+        }
     }
 
     @Override
